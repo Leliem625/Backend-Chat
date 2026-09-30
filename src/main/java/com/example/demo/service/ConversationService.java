@@ -12,4 +12,8 @@ public interface ConversationService {
     ConversationResponse getOrCreateDirectConversation(Long currentUserId, Long recipientId);
 
     ConversationResponse addMemberGroupConversation(Long conversationId, Long currentId, List<Long> memberIds);
+
+    String deleteMemberGroupConversation(Long conversationId, Long currentId, Long memberId);
+
+    List<ConversationResponse> getListConversation(Long userId);
 }

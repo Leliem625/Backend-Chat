@@ -15,13 +15,10 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(
-    name = "conversations",
-    indexes = {
+@Table(name = "conversations", indexes = {
         // Index tối ưu khi sắp xếp danh sách cuộc trò chuyện theo tin nhắn mới nhất
         @Index(name = "idx_last_message_at", columnList = "last_message_at DESC")
-    }
-)
+})
 public class Conversation {
 
     @Id
@@ -33,7 +30,8 @@ public class Conversation {
     @Column(nullable = false, length = 20)
     private ConversationType type;
 
-    // Tên cuộc trò chuyện (Nếu là Group thì lưu tên nhóm; nếu 1-1 có thể để null hoặc đặt tên tùy ý)
+    // Tên cuộc trò chuyện (Nếu là Group thì lưu tên nhóm; nếu 1-1 có thể để null
+    // hoặc đặt tên tùy ý)
     @Column(name = "conversation_name")
     private String conversationName;
 
