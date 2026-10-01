@@ -53,9 +53,11 @@ public class AuthMiddleware extends OncePerRequestFilter {
         String path = request.getRequestURI();
 
         // 1. Danh sách các route PUBLIC (cho qua, không cần token):
-        if (path.equals("/api/auth/login") ||
-                path.equals("/api/auth/register") ||
-                path.equals("/api/auth/refresh-token")) {
+        if (path.equals("/api/auth/login") || path.equals("/api/auth/login/") ||
+                path.equals("/api/auth/register") || path.equals("/api/auth/register/") ||
+                path.equals("/api/auth/refresh-token") || path.equals("/api/auth/refresh-token/") ||
+                path.equals("/api/auth/send-otp") || path.equals("/api/auth/send-otp/") ||
+                path.equals("/api/auth/forgot-password") || path.equals("/api/auth/forgot-password/")) {
             return true; // Bỏ qua không filter
         }
 

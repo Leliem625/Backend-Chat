@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -16,8 +18,8 @@ import jakarta.persistence.Table;
 @Table(
     name = "messages",
     indexes = {
-        // Tương đương: messageSchema.index({conversationId: 1, createdAt: -1})
-        @Index(name = "idx_conversation_created_at", columnList = "conversation_id, created_at DESC")
+        // Lấy lịch sử tin nhắn của 1 cuộc trò chuyện, phân trang theo id (id tự tăng nên luôn đúng thứ tự)
+        @Index(name = "idx_conversation_id_id", columnList = "conversation_id, id")
     }
 )
 public class Message {
@@ -38,9 +40,11 @@ public class Message {
     @Column(name = "content", columnDefinition = "TEXT")
     private String content;
 
-    // Tương đương imgUrl: { type: String }
-    @Column(name = "img_url", length = 500)
-    private String imgUrl;
+    // TEXT (văn bản), IMAGE (ảnh), FILE (tệp), SYSTEM (tin hệ thống)
+    // Ảnh / tệp đính kèm lưu ở bảng message_attachments
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false, length = 20)
+    private MessageType type = MessageType.TEXT;
 
     // Tương đương timestamps: true
     @Column(name = "created_at")
@@ -58,17 +62,20 @@ public class Message {
         this.content = content;
     }
 
-    public Message(Long conversationId, Long senderId, String content, String imgUrl) {
+    public Message(Long conversationId, Long senderId, String content, MessageType type) {
         this.conversationId = conversationId;
         this.senderId = senderId;
         this.content = content;
-        this.imgUrl = imgUrl;
+        this.type = type != null ? type : MessageType.TEXT;
     }
 
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
+        if (this.type == null) {
+            this.type = MessageType.TEXT;
+        }
     }
 
     @PreUpdate
@@ -109,12 +116,12 @@ public class Message {
         this.content = content;
     }
 
-    public String getImgUrl() {
-        return imgUrl;
+    public MessageType getType() {
+        return type;
     }
 
-    public void setImgUrl(String imgUrl) {
-        this.imgUrl = imgUrl;
+    public void setType(MessageType type) {
+        this.type = type;
     }
 
     public LocalDateTime getCreatedAt() {
@@ -140,7 +147,7 @@ public class Message {
                 ", conversationId=" + conversationId +
                 ", senderId=" + senderId +
                 ", content='" + content + '\'' +
-                ", imgUrl='" + imgUrl + '\'' +
+                ", type=" + type +
                 ", createdAt=" + createdAt +
                 ", updatedAt=" + updatedAt +
                 '}';

@@ -15,6 +15,7 @@ import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.UserResponse;
 import com.example.demo.entity.FriendRequest;
 import com.example.demo.service.FriendService;
+import com.example.demo.util.ParseUtils;
 
 @RestController
 @RequestMapping("/api/friend")
@@ -28,8 +29,11 @@ public class FriendRequestController {
     @PostMapping("/send-request")
     public ResponseEntity<?> sendFriendRequets(@RequestAttribute("userId") Long userId,
             @RequestBody Map<String, Object> body) {
-        Long toUserId = Long.valueOf(body.get("toUserId").toString());
-        String message = (String) body.get("message");
+        Long toUserId = ParseUtils.toLong(body.get("toUserId"));
+        if (toUserId == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("toUserId không được để trống!"));
+        }
+        String message = ParseUtils.toString(body.get("message"));
         friendService.sendFriendRequest(userId, toUserId, message);
         return ResponseEntity.ok(ApiResponse.success("Gửi lời mời kết bạn thành công!", null));
     }
@@ -37,7 +41,10 @@ public class FriendRequestController {
     @PostMapping("/accept-request")
     public ResponseEntity<?> acceptFriendRequest(@RequestAttribute("userId") Long userId,
             @RequestBody Map<String, Object> body) {
-        Long requestId = Long.valueOf(body.get("requestId").toString());
+        Long requestId = ParseUtils.toLong(body.get("requestId"));
+        if (requestId == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("requestId không được để trống!"));
+        }
         friendService.acceptFriendRequest(userId, requestId);
         return ResponseEntity.ok(ApiResponse.success("Chấp nhận lời mời kết bạn thành công!", null));
     }
@@ -45,7 +52,10 @@ public class FriendRequestController {
     @PostMapping("/decline-request")
     public ResponseEntity<?> declineFriendRequest(@RequestAttribute("userId") Long userId,
             @RequestBody Map<String, Object> body) {
-        Long requestId = Long.valueOf(body.get("requestId").toString());
+        Long requestId = ParseUtils.toLong(body.get("requestId"));
+        if (requestId == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("requestId không được để trống!"));
+        }
         friendService.declineFriendRequest(userId, requestId);
         return ResponseEntity.ok(ApiResponse.success("Từ chối lời mời kết bạn thành công!", null));
     }
@@ -53,7 +63,10 @@ public class FriendRequestController {
     @PostMapping("/unfriend")
     public ResponseEntity<?> unfriend(@RequestAttribute("userId") Long userId, 
             @RequestBody Map<String, Object> body) {
-        Long friendId = Long.valueOf(body.get("friendId").toString());
+        Long friendId = ParseUtils.toLong(body.get("friendId"));
+        if (friendId == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("friendId không được để trống!"));
+        }
         friendService.unfriend(userId, friendId);
         return ResponseEntity.ok(ApiResponse.success("Hủy kết bạn thành công!", null));
     }

@@ -16,9 +16,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.demo.dto.ApiResponse;
+import com.example.demo.dto.ForgotPasswordRequest;
 import com.example.demo.dto.LoginRequest;
 import com.example.demo.dto.RegisterRequest;
+import com.example.demo.dto.SendOtpRequest;
 import com.example.demo.dto.UserResponse;
+import com.example.demo.service.OtpService;
 import com.example.demo.service.UserService;
 
 import jakarta.validation.Valid;
@@ -28,10 +31,12 @@ import jakarta.validation.Valid;
 public class AuthController {
 
         private final UserService userService;
+        private final OtpService otpService;
         private static final Duration REFRESH_TOKEN_TTL = Duration.ofDays(7); // 7 ngày
 
-        public AuthController(UserService userService) {
+        public AuthController(UserService userService, OtpService otpService) {
                 this.userService = userService;
+                this.otpService = otpService;
         }
 
         @PostMapping("/register")
@@ -112,5 +117,17 @@ public class AuthController {
         public ResponseEntity<ApiResponse<UserResponse>> getMe(@RequestAttribute("userId") Long userId) {
                 UserResponse request = userService.getMe(userId);
                 return ResponseEntity.ok(ApiResponse.success("Lay du lieu thanh cong!", request));
+        }
+
+        @PostMapping("/send-otp")
+        public ResponseEntity<ApiResponse<Void>> sendOtp(@Valid @RequestBody SendOtpRequest request) {
+                otpService.sendOtpByEmail(request.getEmail());
+                return ResponseEntity.ok(ApiResponse.success("Mã OTP đã được gửi đến email của bạn", null));
+        }
+
+        @PostMapping("/forgot-password")
+        public ResponseEntity<ApiResponse<UserResponse>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+                UserResponse response = userService.forgotPassword(request);
+                return ResponseEntity.ok(ApiResponse.success("Đặt lại mật khẩu thành công", response));
         }
 }

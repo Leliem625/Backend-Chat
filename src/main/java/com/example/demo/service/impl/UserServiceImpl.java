@@ -6,12 +6,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.example.demo.dto.ForgotPasswordRequest;
 import com.example.demo.dto.LoginRequest;
 import com.example.demo.dto.RegisterRequest;
 import com.example.demo.dto.UserResponse;
+import com.example.demo.entity.Otp;
 import com.example.demo.entity.Session;
 import com.example.demo.entity.User;
+import com.example.demo.repository.OtpRepository;
 import com.example.demo.repository.SessionRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.security.JwtService;
@@ -24,16 +28,19 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final SessionRepository sessionRepository;
+    private final OtpRepository otpRepository;
     private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
 
     public UserServiceImpl(UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            SessionRepository sessionRepository) {
+            SessionRepository sessionRepository,
+            OtpRepository otpRepository) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.sessionRepository = sessionRepository;
+        this.otpRepository = otpRepository;
     }
 
     @Override
@@ -118,5 +125,41 @@ public class UserServiceImpl implements UserService {
             throw new RuntimeException("User khong ton tai!");
         }
         return UserResponse.fromUser(user);
+    }
+
+    @Override
+    public UserResponse changePassword(Long userId, String passwordOld, String passwordNew) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new RuntimeException("User này không tồn tại!"));
+        if (!passwordEncoder.matches(passwordOld, user.getHashedPassword())) {
+            throw new RuntimeException("Mật khẩu cũ không chính xác!");
+        }
+        String hashedPassword = passwordEncoder.encode(passwordNew);
+        user.setHashedPassword(hashedPassword);
+        User savedUser = userRepository.save(user);
+        return UserResponse.fromUser(savedUser);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse forgotPassword(ForgotPasswordRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("Người dùng không tồn tại!"));
+        Otp otp = otpRepository.findTopByEmailAndIsUsedFalseOrderByCreatedAtDesc(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("Chưa có mã Otp nào được gửi đi!"));
+        if (otp.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Mã OTP đã hết hạn, vui lòng lấy mã mới!");
+        }
+
+        if (!otp.getOtp().equals(request.getOtp())) {
+            throw new RuntimeException("Mã OTP không chính xác!");
+        }
+        String hashedPassword = passwordEncoder.encode(request.getPasswordNew());
+        user.setHashedPassword(hashedPassword);
+
+        otp.setIsUsed(true);
+        otpRepository.save(otp);
+
+        User savedUser = userRepository.save(user);
+        return UserResponse.fromUser(savedUser);
     }
 }
