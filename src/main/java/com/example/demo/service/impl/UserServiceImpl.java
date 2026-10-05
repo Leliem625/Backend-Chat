@@ -12,7 +12,6 @@ import com.example.demo.dto.ForgotPasswordRequest;
 import com.example.demo.dto.LoginRequest;
 import com.example.demo.dto.RegisterRequest;
 import com.example.demo.dto.UserResponse;
-import com.example.demo.entity.Otp;
 import com.example.demo.entity.Session;
 import com.example.demo.entity.User;
 import com.example.demo.repository.OtpRepository;
@@ -70,7 +69,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserResponse login(LoginRequest request) {
-        User user = userRepository.findByUsername(request.getUsername())
+        User user = userRepository.findByEmail(request.getEmail())
                 .orElse(null);
 
         if (user == null) {
@@ -144,20 +143,8 @@ public class UserServiceImpl implements UserService {
     public UserResponse forgotPassword(ForgotPasswordRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("Người dùng không tồn tại!"));
-        Otp otp = otpRepository.findTopByEmailAndIsUsedFalseOrderByCreatedAtDesc(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("Chưa có mã Otp nào được gửi đi!"));
-        if (otp.getExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new RuntimeException("Mã OTP đã hết hạn, vui lòng lấy mã mới!");
-        }
-
-        if (!otp.getOtp().equals(request.getOtp())) {
-            throw new RuntimeException("Mã OTP không chính xác!");
-        }
         String hashedPassword = passwordEncoder.encode(request.getPasswordNew());
         user.setHashedPassword(hashedPassword);
-
-        otp.setIsUsed(true);
-        otpRepository.save(otp);
 
         User savedUser = userRepository.save(user);
         return UserResponse.fromUser(savedUser);

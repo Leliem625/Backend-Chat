@@ -43,4 +43,22 @@ public class OtpServiceImpl implements OtpService {
         // 3. Gửi email chứa mã OTP đến người dùng
         emailService.sendOtpEmail(email, otpCode);
     }
+
+    @Override
+    @Transactional
+    public boolean verifyOtp(Integer otp, String email) {
+        Otp otpVerify = otpRepository.findOtpNewByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Chưa có mã Otp nào được gửi đi!"));
+        if (otpVerify.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Mã OTP đã hết hạn, vui lòng lấy mã mới!");
+        }
+
+        if (!otpVerify.getOtp().equals(String.valueOf(otp))) {
+            throw new RuntimeException("Mã OTP không chính xác!");
+        }
+        otpVerify.setIsUsed(true);
+        otpRepository.save(otpVerify);
+        return true;
+    }
+
 }

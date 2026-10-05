@@ -42,7 +42,8 @@ public class ConversationController {
             @RequestAttribute("userId") Long userId,
             @RequestBody(required = false) Map<String, Object> body,
             @RequestParam(value = "userBid", required = false) Long queryUserBid) {
-        Long userBid = queryUserBid != null ? queryUserBid : (body != null ? ParseUtils.toLong(body.get("userBid")) : null);
+        Long userBid = queryUserBid != null ? queryUserBid
+                : (body != null ? ParseUtils.toLong(body.get("userBid")) : null);
         if (userBid == null) {
             return ResponseEntity.badRequest().body(ApiResponse.error("userBid không được để trống!"));
         }

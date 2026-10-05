@@ -18,11 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.ForgotPasswordRequest;
 import com.example.demo.dto.LoginRequest;
+import com.example.demo.dto.RefreshTokenRequest;
 import com.example.demo.dto.RegisterRequest;
 import com.example.demo.dto.SendOtpRequest;
 import com.example.demo.dto.UserResponse;
 import com.example.demo.service.OtpService;
 import com.example.demo.service.UserService;
+import com.example.demo.util.ParseUtils;
 
 import jakarta.validation.Valid;
 
@@ -107,7 +109,12 @@ public class AuthController {
 
         @PostMapping("/refresh-token")
         public ResponseEntity<ApiResponse<Map<String, String>>> refreshToken(
-                        @CookieValue(name = "refreshToken", required = false) String refreshToken) {
+                        @CookieValue(name = "refreshToken", required = false) String cookieToken,
+                        @RequestBody(required = false) RefreshTokenRequest body) {
+                String refreshToken = cookieToken != null ? cookieToken : (body != null ? body.refreshToken() : null);
+                if (refreshToken == null || refreshToken.isBlank()) {
+                        throw new RuntimeException("Thiếu refresh token!");
+                }
                 String newAccessToken = userService.refreshToken(refreshToken);
                 Map<String, String> data = Map.of("accessToken", newAccessToken);
                 return ResponseEntity.ok(ApiResponse.success("Token refreshed successfully", data));
@@ -125,8 +132,26 @@ public class AuthController {
                 return ResponseEntity.ok(ApiResponse.success("Mã OTP đã được gửi đến email của bạn", null));
         }
 
+        @PostMapping("/verify-otp")
+        public ResponseEntity<ApiResponse<Boolean>> verifyOtp(
+                        @RequestBody Map<String, Object> body) {
+                Integer otp = ParseUtils.toInteger(body.get("otp"));
+                String email = ParseUtils.toString(body.get("email"));
+
+                boolean verified = otpService.verifyOtp(otp, email);
+
+                if (verified) {
+                        return ResponseEntity.ok(
+                                        ApiResponse.success("Xác thực mã OTP thành công!"));
+                }
+
+                return ResponseEntity.badRequest().body(
+                                ApiResponse.success("Mã OTP không chính xác hoặc đã hết hạn!"));
+        }
+
         @PostMapping("/forgot-password")
-        public ResponseEntity<ApiResponse<UserResponse>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        public ResponseEntity<ApiResponse<UserResponse>> forgotPassword(
+                        @Valid @RequestBody ForgotPasswordRequest request) {
                 UserResponse response = userService.forgotPassword(request);
                 return ResponseEntity.ok(ApiResponse.success("Đặt lại mật khẩu thành công", response));
         }

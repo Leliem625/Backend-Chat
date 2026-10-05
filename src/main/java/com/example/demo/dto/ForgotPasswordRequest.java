@@ -10,9 +10,9 @@ public class ForgotPasswordRequest {
     @Email(message = "Email không đúng định dạng")
     private String email;
 
-    @NotBlank(message = "Mã OTP không được để trống")
-    @Size(min = 6, max = 6, message = "Mã OTP phải có đúng 6 ký tự")
-    private String otp;
+    // @NotBlank(message = "Mã OTP không được để trống")
+    // @Size(min = 6, max = 6, message = "Mã OTP phải có đúng 6 ký tự")
+    // private String otp;
 
     @NotBlank(message = "Mật khẩu mới không được để trống")
     @Size(min = 6, message = "Mật khẩu mới phải có ít nhất 6 ký tự")
@@ -21,9 +21,9 @@ public class ForgotPasswordRequest {
     public ForgotPasswordRequest() {
     }
 
-    public ForgotPasswordRequest(String email, String otp, String passwordNew) {
+    public ForgotPasswordRequest(String email, String passwordNew) {
         this.email = email;
-        this.otp = otp;
+        // this.otp = otp;
         this.passwordNew = passwordNew;
     }
 
@@ -35,13 +35,13 @@ public class ForgotPasswordRequest {
         this.email = email;
     }
 
-    public String getOtp() {
-        return otp;
-    }
+    // public String getOtp() {
+    // return otp;
+    // }
 
-    public void setOtp(String otp) {
-        this.otp = otp;
-    }
+    // public void setOtp(String otp) {
+    // this.otp = otp;
+    // }
 
     public String getPasswordNew() {
         return passwordNew;

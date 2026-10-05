@@ -50,14 +50,21 @@ public class AuthMiddleware extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
+        // Cho phép tất cả request OPTIONS (CORS preflight) đi qua
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+
         String path = request.getRequestURI();
 
         // 1. Danh sách các route PUBLIC (cho qua, không cần token):
-        if (path.equals("/api/auth/login") || path.equals("/api/auth/login/") ||
+        if (path.equals("/") ||
+                path.equals("/api/auth/login") || path.equals("/api/auth/login/") ||
                 path.equals("/api/auth/register") || path.equals("/api/auth/register/") ||
                 path.equals("/api/auth/refresh-token") || path.equals("/api/auth/refresh-token/") ||
                 path.equals("/api/auth/send-otp") || path.equals("/api/auth/send-otp/") ||
-                path.equals("/api/auth/forgot-password") || path.equals("/api/auth/forgot-password/")) {
+                path.equals("/api/auth/forgot-password") || path.equals("/api/auth/forgot-password/") ||
+                path.equals("/api/auth/verify-otp") || path.equals("/api/auth/verify-otp/")) {
             return true; // Bỏ qua không filter
         }
 
