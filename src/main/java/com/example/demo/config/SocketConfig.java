@@ -34,15 +34,33 @@ public class SocketConfig {
             }
         });
 
-        // Xác thực lúc bắt tay: client gửi header "Authorization: Bearer
-        // <accessToken>"
+        // Xác thực lúc bắt tay:
+        // 1. Mobile (React Native): gửi qua header "Authorization: Bearer <token>"
+        // 2. Web Browser: WebSocket trên trình duyệt không cho phép gửi custom header,
+        //    nên gửi qua query param "?token=<token>" hoặc "?accessToken=<token>"
         config.setAuthorizationListener(handshakeData -> {
+            String token = null;
+
+            // 1. Kiểm tra trong Header (dành cho Mobile)
             String header = handshakeData.getHttpHeaders().get("Authorization");
-            if (header == null || !header.startsWith("Bearer ")) {
+            if (header != null && header.startsWith("Bearer ")) {
+                token = header.substring(7);
+            }
+
+            // 2. Nếu không có ở Header (dành cho Web Browser), lấy từ Query Param
+            if (token == null || token.isBlank()) {
+                token = handshakeData.getSingleUrlParam("token");
+            }
+            if (token == null || token.isBlank()) {
+                token = handshakeData.getSingleUrlParam("accessToken");
+            }
+
+            if (token == null || token.isBlank()) {
                 return AuthorizationResult.FAILED_AUTHORIZATION;
             }
+
             try {
-                Long userId = jwtService.extractUserId(header.substring(7));
+                Long userId = jwtService.extractUserId(token);
                 // userId được lưu vào client, lấy lại bằng client.get("userId")
                 return new AuthorizationResult(true, Map.of("userId", userId));
             } catch (Exception e) {

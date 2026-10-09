@@ -218,7 +218,8 @@ public class ConversationServiceImpl implements ConversationService {
                         String avatarUrl = null;
 
                         if (conv.getType() == ConversationType.DIRECT) {
-                                List<Long> memberIds = conversationParticipantRepository.findUserIdsByConversationId(conv.getId());
+                                List<Long> memberIds = conversationParticipantRepository
+                                                .findUserIdsByConversationId(conv.getId());
                                 Long otherUserId = memberIds.stream()
                                                 .filter(id -> !id.equals(userId))
                                                 .findFirst()

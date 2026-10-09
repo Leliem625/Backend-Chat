@@ -12,13 +12,10 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(
-    name = "otps",
-    indexes = {
+@Table(name = "otps", indexes = {
         // Đánh index cho email để tìm kiếm mã OTP nhanh nhất
         @Index(name = "idx_otp_email", columnList = "email")
-    }
-)
+})
 public class Otp {
 
     @Id

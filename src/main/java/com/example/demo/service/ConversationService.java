@@ -16,4 +16,7 @@ public interface ConversationService {
     String deleteMemberGroupConversation(Long conversationId, Long currentId, Long memberId);
 
     List<ConversationResponse> getListConversation(Long userId);
+
+    // List<MessageResponse> getMessageConversation(Long conversationId, Long
+    // userId);
 }
