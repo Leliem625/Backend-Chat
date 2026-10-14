@@ -48,6 +48,14 @@ public class MessageController {
         return ResponseEntity.ok(ApiResponse.success("Đã đánh dấu đã xem!", null));
     }
 
+    // POST /api/message/{messageId}/recall: thu hồi tin nhắn mình đã gửi
+    @PostMapping("/{messageId}/recall")
+    public ResponseEntity<ApiResponse<MessageResponse>> recallMessage(@RequestAttribute("userId") Long userId,
+            @PathVariable Long messageId) {
+        MessageResponse message = messageService.recallMessage(userId, messageId);
+        return ResponseEntity.ok(ApiResponse.success("Đã thu hồi tin nhắn!", message));
+    }
+
     // GET /api/message/{conversationId}?limit=15&cursor=2026-10-08T10:00:00
     @GetMapping("/{conversationId}")
     public ResponseEntity<ApiResponse<MessagePageResponse>> getMessages(@RequestAttribute("userId") Long userId,

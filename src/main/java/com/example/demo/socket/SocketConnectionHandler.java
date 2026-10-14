@@ -11,15 +11,17 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.example.demo.repository.ConversationParticipantRepository;
 
 @Component
 public class SocketConnectionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(SocketConnectionHandler.class);
     private final Map<Long, Set<UUID>> onlineUsers = new ConcurrentHashMap<>();
+    private final ConversationParticipantRepository participantRepository;
 
-    public SocketConnectionHandler(SocketIOServer server) {
-
+    public SocketConnectionHandler(SocketIOServer server, ConversationParticipantRepository participantRepository) {
+        this.participantRepository = participantRepository;
         server.addConnectListener(client -> {
             Long userId = client.get("userId");
             if (userId == null) {
@@ -44,12 +46,27 @@ public class SocketConnectionHandler {
             Set<Long> currentOnlineIds = Collections.unmodifiableSet(onlineUsers.keySet());
             client.sendEvent("online_users", currentOnlineIds);
 
-            // Nếu đây là phiên kết nối đầu tiên của user -> Báo cho tất cả người khác biết user này vừa Online
+            // Nếu đây là phiên kết nối đầu tiên của user -> Báo cho tất cả người khác biết
+            // user này vừa Online
             if (isFirstSession) {
                 server.getBroadcastOperations().sendEvent("user_online", Map.of("userId", userId));
             }
         });
-
+        server.addEventListener("typing", Map.class, (client, data, ack) -> {
+            Long userId = client.get("userId");
+            Long conversationId = Long.valueOf(data.get("conversationId").toString());
+            boolean isTyping = Boolean.TRUE.equals(data.get("isTyping"));
+            // Chỉ thành viên của cuộc trò chuyện mới được báo
+            if (!participantRepository.existsByConversationIdAndUserId(conversationId, userId))
+                return;
+            Map<String, Object> payload = Map.of("conversationId", conversationId, "userId", userId, "isTyping",
+                    isTyping);
+            for (Long memberId : participantRepository.findUserIdsByConversationId(conversationId)) {
+                if (!memberId.equals(userId)) {
+                    server.getRoomOperations("user:" + memberId).sendEvent("typing", payload);
+                }
+            }
+        });
         server.addDisconnectListener(client -> {
             Long userId = client.get("userId");
             if (userId == null) {
@@ -70,9 +87,11 @@ public class SocketConnectionHandler {
                 }
             }
 
-            log.info("User {} đã ngắt kết nối (Session: {}) - isCompletelyOffline: {}", userId, sessionId, isCompletelyOffline);
+            log.info("User {} đã ngắt kết nối (Session: {}) - isCompletelyOffline: {}", userId, sessionId,
+                    isCompletelyOffline);
 
-            // Nếu user đã tắt hết mọi phiên kết nối -> Báo cho tất cả người khác biết user này đã Offline!
+            // Nếu user đã tắt hết mọi phiên kết nối -> Báo cho tất cả người khác biết user
+            // này đã Offline!
             if (isCompletelyOffline) {
                 server.getBroadcastOperations().sendEvent("user_offline", Map.of("userId", userId));
             }

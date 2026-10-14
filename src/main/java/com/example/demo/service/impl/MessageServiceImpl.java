@@ -11,11 +11,15 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.example.demo.dto.MessagePageResponse;
@@ -35,10 +39,13 @@ import com.example.demo.repository.ConversationRepository;
 import com.example.demo.repository.MessageAttachmentRepository;
 import com.example.demo.repository.MessageRepository;
 import com.example.demo.repository.UserRepository;
+import com.example.demo.service.FileStorageService;
 import com.example.demo.service.MessageService;
 
 @Service
 public class MessageServiceImpl implements MessageService {
+
+    private static final Logger log = LoggerFactory.getLogger(MessageServiceImpl.class);
 
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
@@ -46,11 +53,13 @@ public class MessageServiceImpl implements MessageService {
     private final MessageAttachmentRepository messageAttachmentRepository;
     private final UserRepository userRepository;
     private final SocketIOServer socketServer;
+    private final FileStorageService fileStorageService;
 
     private static final int MAX_ATTACHMENTS = 10;
     private static final int MAX_PAGE_SIZE = 50;
     private static final int MAX_PREVIEW_LENGTH = 1000; // Bằng độ dài cột last_message_content
     private static final Set<String> RESOURCE_TYPES = Set.of("image", "raw");
+    private static final String RECALLED_PREVIEW = "Tin nhắn đã được thu hồi";
 
     @Value("${cloudinary.cloud-name:}")
     private String cloudName;
@@ -59,13 +68,15 @@ public class MessageServiceImpl implements MessageService {
             ConversationParticipantRepository conversationParticipantRepository,
             MessageAttachmentRepository messageAttachmentRepository,
             UserRepository userRepository,
-            SocketIOServer socketServer) {
+            SocketIOServer socketServer,
+            FileStorageService fileStorageService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.conversationParticipantRepository = conversationParticipantRepository;
         this.messageAttachmentRepository = messageAttachmentRepository;
         this.userRepository = userRepository;
         this.socketServer = socketServer;
+        this.fileStorageService = fileStorageService;
     }
 
     @Override
@@ -80,7 +91,11 @@ public class MessageServiceImpl implements MessageService {
         Message message = new Message(conversationId, senderId, content, type);
         Message savedMessage = messageRepository.save(message);
         updateConversationAfterSend(conversation, savedMessage, savedMessage.getContent());
-        return MessageResponse.fromMessage(savedMessage);
+        // Kèm người gửi để bên nhận có avatar / tên (giống sendFiles)
+        User sender = userRepository.findById(senderId).orElse(null);
+        MessageResponse response = MessageResponse.fromMessage(savedMessage, sender, null);
+        emitNewMessage(conversationId, response);
+        return response;
     }
 
     @Override
@@ -134,6 +149,7 @@ public class MessageServiceImpl implements MessageService {
         updateConversationAfterSend(conversation, savedMessage, preview);
 
         User sender = userRepository.findById(senderId).orElse(null);
+        emitNewMessage(conversationId, MessageResponse.fromMessage(savedMessage, sender, savedAttachments));
         return MessageResponse.fromMessage(savedMessage, sender, savedAttachments);
     }
 
@@ -161,7 +177,8 @@ public class MessageServiceImpl implements MessageService {
         // đang sắp mới -> cũ)
         LocalDateTime nextCursor = hasMore ? messages.get(messages.size() - 1).getCreatedAt() : null;
 
-        // Lấy file đính kèm và người gửi của cả trang bằng 2 query, rồi ghép theo từng tin nhắn
+        // Lấy file đính kèm và người gửi của cả trang bằng 2 query, rồi ghép theo từng
+        // tin nhắn
         List<Long> messageIds = messages.stream().map(Message::getId).toList();
         Map<Long, List<MessageAttachment>> attachmentsByMessage = messageIds.isEmpty()
                 ? Map.of()
@@ -287,5 +304,88 @@ public class MessageServiceImpl implements MessageService {
             }
         }
         conversationParticipantRepository.saveAll(conversationPar);
+    }
+
+    @Override
+    public void emitNewMessage(Long conversationId, MessageResponse message) {
+        List<Long> memberIds = conversationParticipantRepository.findUserIdsByConversationId(conversationId);
+        runAfterCommit(() -> {
+            for (Long memberId : memberIds) {
+                socketServer.getRoomOperations("user:" + memberId).sendEvent("new_message", message);
+            }
+        });
+    }
+
+    @Override
+    @Transactional
+    public MessageResponse recallMessage(Long userId, Long messageId) {
+        Message message = messageRepository.findById(messageId)
+                .orElseThrow(() -> new RuntimeException("Tin nhắn không tồn tại!"));
+        if (!message.getSenderId().equals(userId)) {
+            throw new RuntimeException("Bạn chỉ có thể thu hồi tin nhắn của chính mình!");
+        }
+        if (message.isRecalled()) {
+            throw new RuntimeException("Tin nhắn đã được thu hồi trước đó!");
+        }
+        Long conversationId = message.getConversationId();
+        // Người đã rời nhóm thì không còn quyền thao tác trong cuộc trò chuyện
+        requireParticipant(conversationId, userId);
+
+        // Xoá nội dung, đánh dấu đã thu hồi
+        message.setContent(null);
+        message.setRecalled(true);
+        message.setRecalledAt(LocalDateTime.now());
+        Message saved = messageRepository.save(message);
+
+        // Xoá file đính kèm trong DB; file trên Cloudinary xoá sau khi commit
+        // (lỗi Cloudinary chỉ ghi log, không làm hỏng việc thu hồi)
+        List<MessageAttachment> attachments = messageAttachmentRepository.findByMessageId(messageId);
+        if (!attachments.isEmpty()) {
+            messageAttachmentRepository.deleteAll(attachments);
+            runAfterCommit(() -> {
+                for (MessageAttachment att : attachments) {
+                    try {
+                        fileStorageService.delete(att.getPublicId(), att.getResourceType());
+                    } catch (Exception e) {
+                        log.warn("Không xoá được file {} trên Cloudinary: {}", att.getPublicId(), e.getMessage());
+                    }
+                }
+            });
+        }
+
+        // Nếu đây là tin cuối cùng -> đổi preview ở danh sách cuộc trò chuyện
+        conversationRepository.findById(conversationId).ifPresent(conversation -> {
+            if (messageId.toString().equals(conversation.getLastMessageId())) {
+                conversation.setLastMessageContent(RECALLED_PREVIEW);
+                conversationRepository.save(conversation);
+            }
+        });
+
+        User sender = userRepository.findById(userId).orElse(null);
+        MessageResponse response = MessageResponse.fromMessage(saved, sender, null);
+
+        // Báo cho mọi thành viên (kể cả các thiết bị khác của người thu hồi)
+        List<Long> memberIds = conversationParticipantRepository.findUserIdsByConversationId(conversationId);
+        runAfterCommit(() -> {
+            for (Long memberId : memberIds) {
+                socketServer.getRoomOperations("user:" + memberId).sendEvent("message_recalled", response);
+            }
+        });
+        return response;
+    }
+
+    // Đang trong transaction -> đợi lưu xong (commit) mới chạy, tránh bên nhận gọi API
+    // khi dữ liệu chưa có trong DB; không có transaction thì chạy luôn
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
     }
 }

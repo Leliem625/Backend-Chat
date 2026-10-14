@@ -18,6 +18,7 @@ public record MessageResponse(
     String content,
     MessageType type,
     List<AttachmentResponse> attachments,
+    boolean recalled,           // true -> tin đã thu hồi, client hiện "Tin nhắn đã được thu hồi"
     LocalDateTime createdAt,
     LocalDateTime updatedAt
 ) {
@@ -58,6 +59,7 @@ public record MessageResponse(
             message.getContent(),
             message.getType(),
             null,
+            message.isRecalled(),
             message.getCreatedAt(),
             message.getUpdatedAt()
         );
@@ -79,6 +81,7 @@ public record MessageResponse(
             message.getContent(),
             message.getType(),
             attachments,
+            message.isRecalled(),
             message.getCreatedAt(),
             message.getUpdatedAt()
         );
@@ -107,6 +110,7 @@ public record MessageResponse(
     public String getContent() { return content(); }
     public MessageType getType() { return type(); }
     public List<AttachmentResponse> getAttachments() { return attachments(); }
+    public boolean isRecalled() { return recalled(); }
     public LocalDateTime getCreatedAt() { return createdAt(); }
     public LocalDateTime getUpdatedAt() { return updatedAt(); }
 }

@@ -46,6 +46,14 @@ public class Message {
     @Column(name = "type", nullable = false, length = 20)
     private MessageType type = MessageType.TEXT;
 
+    // Đã thu hồi: vẫn giữ dòng để hiện "Tin nhắn đã được thu hồi" đúng vị trí,
+    // nhưng nội dung và file đính kèm đã bị xoá
+    @Column(name = "is_recalled", nullable = false, columnDefinition = "BOOLEAN NOT NULL DEFAULT FALSE")
+    private boolean recalled = false;
+
+    @Column(name = "recalled_at")
+    private LocalDateTime recalledAt;
+
     // Tương đương timestamps: true
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -124,6 +132,22 @@ public class Message {
         this.type = type;
     }
 
+    public boolean isRecalled() {
+        return recalled;
+    }
+
+    public void setRecalled(boolean recalled) {
+        this.recalled = recalled;
+    }
+
+    public LocalDateTime getRecalledAt() {
+        return recalledAt;
+    }
+
+    public void setRecalledAt(LocalDateTime recalledAt) {
+        this.recalledAt = recalledAt;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -148,6 +172,7 @@ public class Message {
                 ", senderId=" + senderId +
                 ", content='" + content + '\'' +
                 ", type=" + type +
+                ", recalled=" + recalled +
                 ", createdAt=" + createdAt +
                 ", updatedAt=" + updatedAt +
                 '}';
