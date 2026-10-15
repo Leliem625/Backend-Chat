@@ -195,11 +195,14 @@ public class MessageServiceImpl implements MessageService {
         Map<Long, User> sendersById = userRepository.findAllById(senderIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
 
+        // Người đang chặn mình: không trả tên / avatar (hiện như tài khoản không hoạt động)
+        Set<Long> blockingMe = blockService.getBlockingMeIds(userId);
+
         // Trả về theo thứ tự mới nhất trước, client tự đảo lại khi hiển thị
         List<MessageResponse> items = messages.stream()
                 .map(m -> MessageResponse.fromMessage(
                         m,
-                        sendersById.get(m.getSenderId()),
+                        blockingMe.contains(m.getSenderId()) ? null : sendersById.get(m.getSenderId()),
                         attachmentsByMessage.get(m.getId())))
                 .toList();
         return new MessagePageResponse(items, nextCursor, hasMore, getSeenBy(conversationId, userId));
@@ -236,6 +239,8 @@ public class MessageServiceImpl implements MessageService {
         List<ConversationParticipant> others = conversationParticipantRepository.findByConversationId(conversationId)
                 .stream()
                 .filter(p -> !p.getUserId().equals(currentUserId) && p.getLastSeenAt() != null)
+                // Có quan hệ chặn -> không hiện "đã xem" của nhau
+                .filter(p -> !blockService.isBlockedEitherWay(currentUserId, p.getUserId()))
                 .toList();
         if (others.isEmpty()) {
             return List.of();

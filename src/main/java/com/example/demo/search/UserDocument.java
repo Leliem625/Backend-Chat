@@ -34,17 +34,27 @@ public class UserDocument {
     @Field(type = FieldType.Keyword, index = false)
     private String avatarUrl;
 
+    // Keyword: lọc đúng giá trị (vd chỉ người sống ở "Hà Nội") + hiển thị để phân biệt người trùng tên
+    @Field(type = FieldType.Keyword)
+    private String currentCity;
+
+    @Field(type = FieldType.Keyword)
+    private String hometown;
+
     public UserDocument() {
     }
 
-    public UserDocument(Long id, String username, String avatarUrl) {
+    public UserDocument(Long id, String username, String avatarUrl, String currentCity, String hometown) {
         this.id = id;
         this.username = username;
         this.avatarUrl = avatarUrl;
+        this.currentCity = currentCity;
+        this.hometown = hometown;
     }
 
     public static UserDocument fromUser(User user) {
-        return new UserDocument(user.getId(), user.getUsername(), user.getAvatarUrl());
+        return new UserDocument(user.getId(), user.getUsername(), user.getAvatarUrl(),
+                user.getCurrentCity(), user.getHometown());
     }
 
     public Long getId() {
@@ -69,5 +79,21 @@ public class UserDocument {
 
     public void setAvatarUrl(String avatarUrl) {
         this.avatarUrl = avatarUrl;
+    }
+
+    public String getCurrentCity() {
+        return currentCity;
+    }
+
+    public void setCurrentCity(String currentCity) {
+        this.currentCity = currentCity;
+    }
+
+    public String getHometown() {
+        return hometown;
+    }
+
+    public void setHometown(String hometown) {
+        this.hometown = hometown;
     }
 }

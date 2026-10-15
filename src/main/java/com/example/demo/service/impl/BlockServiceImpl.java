@@ -24,6 +24,7 @@ import com.example.demo.repository.UserBlockRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.BlockService;
 import com.example.demo.service.NotificationService;
+import com.example.demo.socket.PresenceService;
 import com.example.demo.util.TransactionUtils;
 
 @Service
@@ -37,16 +38,19 @@ public class BlockServiceImpl implements BlockService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final SocketIOServer socketServer;
+    private final PresenceService presenceService;
 
     public BlockServiceImpl(UserBlockRepository userBlockRepository, FriendRepository friendRepository,
             FriendRequestRepository friendRequestRepository, UserRepository userRepository,
-            NotificationService notificationService, SocketIOServer socketServer) {
+            NotificationService notificationService, SocketIOServer socketServer,
+            PresenceService presenceService) {
         this.userBlockRepository = userBlockRepository;
         this.friendRepository = friendRepository;
         this.friendRequestRepository = friendRequestRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.socketServer = socketServer;
+        this.presenceService = presenceService;
     }
 
     @Override
@@ -70,6 +74,8 @@ public class BlockServiceImpl implements BlockService {
         Long minId = Math.min(userId, friendId);
         Long maxId = Math.max(userId, friendId);
         friendRepository.findByUserAIdAndUserBId(minId, maxId).ifPresent(friendRepository::delete);
+        // Chặn -> 2 bên ẩn trạng thái online của nhau ngay
+        TransactionUtils.runAfterCommit(() -> presenceService.onFriendshipEnded(userId, friendId));
 
         // 4 + 5. Xoá lời mời kết bạn đang chờ ở CẢ HAI CHIỀU,
         // kèm thông báo FRIEND_REQUEST của lời mời đó (để không bấm "Chấp nhận" vào lời mời đã mất)

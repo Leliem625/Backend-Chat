@@ -1,6 +1,7 @@
 package com.example.demo.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -29,6 +30,19 @@ public class User {
 
     @Column(nullable = true, length = 500)
     private String bio;
+
+    // --- Thông tin cá nhân (học vấn / công việc / sở thích nằm ở bảng riêng vì có nhiều dòng) ---
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private Gender gender;
+
+    private LocalDate birthday;
+
+    @Column(length = 100)
+    private String hometown;      // Quê quán
+
+    @Column(name = "current_city", length = 100)
+    private String currentCity;   // Nơi sống hiện tại
     
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -110,6 +124,38 @@ public class User {
 
     public void setBio(String bio) {
         this.bio = bio;
+    }
+
+    public Gender getGender() {
+        return gender;
+    }
+
+    public void setGender(Gender gender) {
+        this.gender = gender;
+    }
+
+    public LocalDate getBirthday() {
+        return birthday;
+    }
+
+    public void setBirthday(LocalDate birthday) {
+        this.birthday = birthday;
+    }
+
+    public String getHometown() {
+        return hometown;
+    }
+
+    public void setHometown(String hometown) {
+        this.hometown = hometown;
+    }
+
+    public String getCurrentCity() {
+        return currentCity;
+    }
+
+    public void setCurrentCity(String currentCity) {
+        this.currentCity = currentCity;
     }
 
     public LocalDateTime getCreatedAt() {

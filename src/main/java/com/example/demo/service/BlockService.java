@@ -7,6 +7,10 @@ import com.example.demo.dto.BlockStatus;
 import com.example.demo.dto.BlockedUserResponse;
 
 public interface BlockService {
+    // Người bị chặn thấy người đã chặn mình như 1 tài khoản không còn hoạt động (giống Messenger):
+    // tên chung này + avatar mặc định, không có id để mở trang cá nhân
+    String UNAVAILABLE_USER_NAME = "Người dùng Facebook";
+
     // 1. Chặn: huỷ kết bạn, xoá lời mời + thông báo liên quan, báo socket cho các thiết bị của tôi
     void blockFriend(Long userId, Long friendId);
 

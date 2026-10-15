@@ -1,10 +1,6 @@
 package com.example.demo.socket;
 
-import java.util.Collections;
 import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,14 +14,15 @@ import com.example.demo.service.BlockService;
 public class SocketConnectionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(SocketConnectionHandler.class);
-    private final Map<Long, Set<UUID>> onlineUsers = new ConcurrentHashMap<>();
     private final ConversationParticipantRepository participantRepository;
     private final BlockService blockService;
+    private final PresenceService presenceService;
 
     public SocketConnectionHandler(SocketIOServer server, ConversationParticipantRepository participantRepository,
-            BlockService blockService) {
+            BlockService blockService, PresenceService presenceService) {
         this.participantRepository = participantRepository;
         this.blockService = blockService;
+        this.presenceService = presenceService;
         server.addConnectListener(client -> {
             Long userId = client.get("userId");
             if (userId == null) {
@@ -33,28 +30,9 @@ public class SocketConnectionHandler {
             }
 
             client.joinRoom("user:" + userId);
-            UUID sessionId = client.getSessionId();
-
-            boolean isFirstSession = false;
-            synchronized (onlineUsers) {
-                Set<UUID> sessions = onlineUsers.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet());
-                if (sessions.isEmpty()) {
-                    isFirstSession = true;
-                }
-                sessions.add(sessionId);
-            }
-
-            log.info("User {} đã kết nối (Session: {})", userId, sessionId);
-
-            // Gửi danh sách online cho chính người vừa kết nối
-            Set<Long> currentOnlineIds = Collections.unmodifiableSet(onlineUsers.keySet());
-            client.sendEvent("online_users", currentOnlineIds);
-
-            // Nếu đây là phiên kết nối đầu tiên của user -> Báo cho tất cả người khác biết
-            // user này vừa Online
-            if (isFirstSession) {
-                server.getBroadcastOperations().sendEvent("user_online", Map.of("userId", userId));
-            }
+            log.info("User {} đã kết nối (Session: {})", userId, client.getSessionId());
+            // Trạng thái online chỉ gửi cho / nhận từ bạn bè
+            presenceService.handleConnect(client, userId);
         });
         server.addEventListener("typing", Map.class, (client, data, ack) -> {
             Long userId = client.get("userId");
@@ -78,36 +56,8 @@ public class SocketConnectionHandler {
                 return;
             }
 
-            UUID sessionId = client.getSessionId();
-            boolean isCompletelyOffline = false;
-
-            synchronized (onlineUsers) {
-                Set<UUID> sessions = onlineUsers.get(userId);
-                if (sessions != null) {
-                    sessions.remove(sessionId);
-                    if (sessions.isEmpty()) {
-                        onlineUsers.remove(userId);
-                        isCompletelyOffline = true;
-                    }
-                }
-            }
-
-            log.info("User {} đã ngắt kết nối (Session: {}) - isCompletelyOffline: {}", userId, sessionId,
-                    isCompletelyOffline);
-
-            // Nếu user đã tắt hết mọi phiên kết nối -> Báo cho tất cả người khác biết user
-            // này đã Offline!
-            if (isCompletelyOffline) {
-                server.getBroadcastOperations().sendEvent("user_offline", Map.of("userId", userId));
-            }
+            log.info("User {} đã ngắt kết nối (Session: {})", userId, client.getSessionId());
+            presenceService.handleDisconnect(client, userId);
         });
-    }
-
-    public boolean isUserOnline(Long userId) {
-        return onlineUsers.containsKey(userId);
-    }
-
-    public Set<Long> getOnlineUserIds() {
-        return Collections.unmodifiableSet(onlineUsers.keySet());
     }
 }

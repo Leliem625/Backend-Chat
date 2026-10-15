@@ -13,9 +13,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.demo.dto.ApiResponse;
+import com.example.demo.dto.FriendRequestResponse;
 import com.example.demo.dto.FriendSearchResponse;
 import com.example.demo.dto.UserResponse;
-import com.example.demo.entity.FriendRequest;
 import com.example.demo.service.FriendService;
 import com.example.demo.util.ParseUtils;
 
@@ -62,6 +62,18 @@ public class FriendRequestController {
         return ResponseEntity.ok(ApiResponse.success("Từ chối lời mời kết bạn thành công!", null));
     }
 
+    // POST /api/friend/cancel-request {toUserId}: huỷ lời mời mình đã gửi
+    @PostMapping("/cancel-request")
+    public ResponseEntity<?> cancelFriendRequest(@RequestAttribute("userId") Long userId,
+            @RequestBody Map<String, Object> body) {
+        Long toUserId = ParseUtils.toLong(body.get("toUserId"));
+        if (toUserId == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("toUserId không được để trống!"));
+        }
+        friendService.cancelFriendRequest(userId, toUserId);
+        return ResponseEntity.ok(ApiResponse.success("Đã huỷ lời mời kết bạn!", null));
+    }
+
     @PostMapping("/unfriend")
     public ResponseEntity<?> unfriend(@RequestAttribute("userId") Long userId,
             @RequestBody Map<String, Object> body) {
@@ -81,7 +93,7 @@ public class FriendRequestController {
 
     @GetMapping("/pending-requests")
     public ResponseEntity<?> getPendingRequests(@RequestAttribute("userId") Long userId) {
-        List<FriendRequest> requests = friendService.getPendingRequests(userId);
+        List<FriendRequestResponse> requests = friendService.getPendingRequests(userId);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách lời mời đang chờ thành công!", requests));
     }
 

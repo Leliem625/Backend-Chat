@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.demo.dto.FriendRelation;
+import com.example.demo.dto.FriendRequestResponse;
 import com.example.demo.dto.FriendSearchResponse;
 import com.example.demo.dto.UserResponse;
 import com.example.demo.entity.Friend;
@@ -28,6 +29,8 @@ import com.example.demo.search.UserDocument;
 import com.example.demo.service.BlockService;
 import com.example.demo.service.FriendService;
 import com.example.demo.service.NotificationService;
+import com.example.demo.socket.PresenceService;
+import com.example.demo.util.TransactionUtils;
 
 import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
@@ -42,19 +45,22 @@ public class FriendServiceImpl implements FriendService {
     private final ElasticsearchOperations elasticsearchOperations;
     private final NotificationService notificationService;
     private final BlockService blockService;
+    private final PresenceService presenceService;
 
     public FriendServiceImpl(FriendRepository friendRepository,
             FriendRequestRepository friendRequestRepository,
             UserRepository userRepository,
             ElasticsearchOperations elasticsearchOperations,
             NotificationService notificationService,
-            BlockService blockService) {
+            BlockService blockService,
+            PresenceService presenceService) {
         this.friendRepository = friendRepository;
         this.friendRequestRepository = friendRequestRepository;
         this.userRepository = userRepository;
         this.elasticsearchOperations = elasticsearchOperations;
         this.notificationService = notificationService;
         this.blockService = blockService;
+        this.presenceService = presenceService;
     }
 
     @Override
@@ -108,6 +114,8 @@ public class FriendServiceImpl implements FriendService {
         notificationService.deleteByReference(NotificationType.FRIEND_REQUEST, requestId);
         // Báo cho người đã gửi lời mời: "Y đã chấp nhận lời mời kết bạn"
         notificationService.notify(fromUserId, currentUserId, NotificationType.FRIEND_ACCEPTED, requestId);
+        // Vừa thành bạn bè -> 2 bên thấy trạng thái online của nhau ngay
+        TransactionUtils.runAfterCommit(() -> presenceService.onFriendshipStarted(fromUserId, currentUserId));
         log.info(">>> ĐÃ CHẤP NHẬN KẾT BẠN: {} và {}", fromUserId, currentUserId);
     }
 
@@ -142,12 +150,34 @@ public class FriendServiceImpl implements FriendService {
         }
 
         friendRepository.delete(friend);
+        // Không còn là bạn -> 2 bên ẩn trạng thái online của nhau ngay
+        TransactionUtils.runAfterCommit(() -> presenceService.onFriendshipEnded(currentUserId, friendId));
         log.info(">>> ĐÃ HỦY KẾT BẠN: {} và {}", currentUserId, friendId);
     }
 
     @Override
-    public List<FriendRequest> getPendingRequests(Long currentUserId) {
-        return friendRequestRepository.findByToUserId(currentUserId);
+    @Transactional(readOnly = true)
+    public List<FriendRequestResponse> getPendingRequests(Long currentUserId) {
+        List<FriendRequest> requests = friendRequestRepository.findByToUserId(currentUserId);
+        // Lấy người gửi của cả danh sách bằng 1 query (tránh N+1)
+        Set<Long> fromIds = requests.stream().map(FriendRequest::getFromUserId).collect(Collectors.toSet());
+        Map<Long, User> senders = userRepository.findAllById(fromIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+        return requests.stream()
+                .sorted((a, b) -> b.getId().compareTo(a.getId())) // mới nhất trước
+                .map(r -> FriendRequestResponse.from(r, senders.get(r.getFromUserId())))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public void cancelFriendRequest(Long currentUserId, Long toUserId) {
+        FriendRequest request = friendRequestRepository.findByFromUserIdAndToUserId(currentUserId, toUserId)
+                .orElseThrow(() -> new RuntimeException("Không có lời mời kết bạn nào để huỷ!"));
+        // Xoá thông báo "X đã gửi lời mời" bên người nhận trước (cần id lời mời), rồi xoá lời mời
+        notificationService.deleteByReference(NotificationType.FRIEND_REQUEST, request.getId());
+        friendRequestRepository.delete(request);
+        log.info(">>> ĐÃ HUỶ LỜI MỜI KẾT BẠN: from {} to {}", currentUserId, toUserId);
     }
 
     @Override
@@ -236,7 +266,7 @@ public class FriendServiceImpl implements FriendService {
             return docs.stream()
                     .map(d -> new FriendSearchResponse(d.getId(), d.getUsername(), d.getAvatarUrl(),
                             relationOf(d.getId(), friendIds, sentTo, receivedFrom),
-                            requestIdByFromUser.get(d.getId())))
+                            requestIdByFromUser.get(d.getId()), d.getCurrentCity(), d.getHometown()))
                     .toList();
         } catch (Exception e) {
             // ES lỗi: ghi log, trả rỗng thay vì lỗi 500

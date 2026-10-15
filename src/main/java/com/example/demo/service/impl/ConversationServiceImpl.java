@@ -107,19 +107,21 @@ public class ConversationServiceImpl implements ConversationService {
                                         .orElse(0);
 
                         // Đã từng chat: vẫn mở được để xem lịch sử, frontend dựa vào blockStatus để
-                        // khoá ô nhập
+                        // khoá ô nhập. Bị người kia chặn -> giấu tên / avatar / id như tài khoản không hoạt động
+                        BlockStatus status = blockService.getStatus(currentUserId, recipientId);
+                        boolean hidden = status == BlockStatus.BLOCKED_ME;
                         return new ConversationResponse(
                                         conv.getId(),
                                         conv.getType(),
-                                        recipient.getUsername(),
-                                        recipient.getAvatarUrl(),
+                                        hidden ? BlockService.UNAVAILABLE_USER_NAME : recipient.getUsername(),
+                                        hidden ? null : recipient.getAvatarUrl(),
                                         conv.getLastMessageContent(),
                                         conv.getLastMessageSenderId(),
                                         conv.getLastMessageAt() != null ? conv.getLastMessageAt() : conv.getCreatedAt(),
                                         unreadCount,
                                         conv.getCreatedBy(),
-                                        recipientId,
-                                        blockService.getStatus(currentUserId, recipientId));
+                                        hidden ? null : recipientId,
+                                        status);
                 }
 
                 // Chưa từng chat mà đã chặn nhau -> không cho tạo cuộc trò chuyện mới
@@ -254,7 +256,12 @@ public class ConversationServiceImpl implements ConversationService {
                                         blockStatus = BlockStatus.BLOCKED_ME;
                                 }
 
-                                if (otherUserId != null) {
+                                if (blockStatus == BlockStatus.BLOCKED_ME) {
+                                        // Bị người kia chặn: hiện như tài khoản không còn hoạt động,
+                                        // giấu tên / avatar / id (không mở được trang cá nhân)
+                                        title = BlockService.UNAVAILABLE_USER_NAME;
+                                        otherUserId = null;
+                                } else if (otherUserId != null) {
                                         User otherUser = userRepository.findById(otherUserId).orElse(null);
                                         if (otherUser != null) {
                                                 title = otherUser.getUsername();
