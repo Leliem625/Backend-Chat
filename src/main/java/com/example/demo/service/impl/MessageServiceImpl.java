@@ -28,6 +28,7 @@ import com.example.demo.dto.SendFileMessageRequest;
 import com.example.demo.dto.UploadResponse;
 import com.example.demo.entity.Conversation;
 import com.example.demo.entity.ConversationParticipant;
+import com.example.demo.entity.ConversationType;
 import com.example.demo.entity.Message;
 import com.example.demo.entity.MessageAttachment;
 import com.example.demo.entity.MessageType;
@@ -37,6 +38,7 @@ import com.example.demo.repository.ConversationRepository;
 import com.example.demo.repository.MessageAttachmentRepository;
 import com.example.demo.repository.MessageRepository;
 import com.example.demo.repository.UserRepository;
+import com.example.demo.service.BlockService;
 import com.example.demo.service.FileStorageService;
 import com.example.demo.service.MessageService;
 import com.example.demo.util.TransactionUtils;
@@ -53,6 +55,7 @@ public class MessageServiceImpl implements MessageService {
     private final UserRepository userRepository;
     private final SocketIOServer socketServer;
     private final FileStorageService fileStorageService;
+    private final BlockService blockService;
 
     private static final int MAX_ATTACHMENTS = 10;
     private static final int MAX_PAGE_SIZE = 50;
@@ -68,7 +71,8 @@ public class MessageServiceImpl implements MessageService {
             MessageAttachmentRepository messageAttachmentRepository,
             UserRepository userRepository,
             SocketIOServer socketServer,
-            FileStorageService fileStorageService) {
+            FileStorageService fileStorageService,
+            BlockService blockService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.conversationParticipantRepository = conversationParticipantRepository;
@@ -76,6 +80,7 @@ public class MessageServiceImpl implements MessageService {
         this.userRepository = userRepository;
         this.socketServer = socketServer;
         this.fileStorageService = fileStorageService;
+        this.blockService = blockService;
     }
 
     @Override
@@ -87,6 +92,7 @@ public class MessageServiceImpl implements MessageService {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new RuntimeException("Cuộc trò chuyện không tồn tại!"));
         requireParticipant(conversationId, senderId);
+        requireNotBlocked(conversation, senderId);
         Message message = new Message(conversationId, senderId, content, type);
         Message savedMessage = messageRepository.save(message);
         updateConversationAfterSend(conversation, savedMessage, savedMessage.getContent());
@@ -104,6 +110,7 @@ public class MessageServiceImpl implements MessageService {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new RuntimeException("Cuộc trò chuyện không tồn tại!"));
         requireParticipant(conversationId, senderId);
+        requireNotBlocked(conversation, senderId);
 
         List<UploadResponse> attachments = request.attachments();
         if (attachments == null || attachments.isEmpty()) {
@@ -213,10 +220,15 @@ public class MessageServiceImpl implements MessageService {
         SeenInfo seen = new SeenInfo(userId, user != null ? user.getAvatarUrl() : null, participant.getLastSeenAt());
         Map<String, Object> payload = Map.of("conversationId", conversationId, "seen", seen);
         for (Long memberId : conversationParticipantRepository.findUserIdsByConversationId(conversationId)) {
-            if (!memberId.equals(userId)) {
+            // Không báo "đã xem" cho người có quan hệ chặn với mình
+            if (!memberId.equals(userId) && !blockService.isBlockedEitherWay(userId, memberId)) {
                 socketServer.getRoomOperations("user:" + memberId).sendEvent("message_seen", payload);
             }
         }
+
+        // Báo cho CHÍNH MÌNH (mọi thiết bị / tab đang mở) để xoá badge chưa đọc của cuộc trò chuyện này
+        TransactionUtils.runAfterCommit(() -> socketServer.getRoomOperations("user:" + userId)
+                .sendEvent("conversation_read", Map.of("conversationId", conversationId)));
     }
 
     // Thời điểm xem lần cuối của các thành viên khác (trừ người đang hỏi)
@@ -249,6 +261,19 @@ public class MessageServiceImpl implements MessageService {
                         .toLocalDateTime();
             } catch (DateTimeParseException ex) {
                 throw new RuntimeException("Cursor không hợp lệ, cần dạng ngày giờ ISO (vd: 2026-10-08T10:00:00)!");
+            }
+        }
+    }
+
+    // Chat 1-1: một trong hai người đã chặn người kia thì không gửi được.
+    // Nhóm vẫn gửi bình thường (giống Messenger). Câu báo lỗi chung chung để không lộ ai chặn ai
+    private void requireNotBlocked(Conversation conversation, Long senderId) {
+        if (conversation.getType() != ConversationType.DIRECT) {
+            return;
+        }
+        for (Long memberId : conversationParticipantRepository.findUserIdsByConversationId(conversation.getId())) {
+            if (!memberId.equals(senderId) && blockService.isBlockedEitherWay(senderId, memberId)) {
+                throw new RuntimeException("Không thể gửi tin nhắn cho người này!");
             }
         }
     }

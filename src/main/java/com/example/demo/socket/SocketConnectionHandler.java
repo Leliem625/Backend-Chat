@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.example.demo.repository.ConversationParticipantRepository;
+import com.example.demo.service.BlockService;
 
 @Component
 public class SocketConnectionHandler {
@@ -19,9 +20,12 @@ public class SocketConnectionHandler {
     private static final Logger log = LoggerFactory.getLogger(SocketConnectionHandler.class);
     private final Map<Long, Set<UUID>> onlineUsers = new ConcurrentHashMap<>();
     private final ConversationParticipantRepository participantRepository;
+    private final BlockService blockService;
 
-    public SocketConnectionHandler(SocketIOServer server, ConversationParticipantRepository participantRepository) {
+    public SocketConnectionHandler(SocketIOServer server, ConversationParticipantRepository participantRepository,
+            BlockService blockService) {
         this.participantRepository = participantRepository;
+        this.blockService = blockService;
         server.addConnectListener(client -> {
             Long userId = client.get("userId");
             if (userId == null) {
@@ -62,7 +66,8 @@ public class SocketConnectionHandler {
             Map<String, Object> payload = Map.of("conversationId", conversationId, "userId", userId, "isTyping",
                     isTyping);
             for (Long memberId : participantRepository.findUserIdsByConversationId(conversationId)) {
-                if (!memberId.equals(userId)) {
+                // Không báo "đang soạn" cho người có quan hệ chặn với mình
+                if (!memberId.equals(userId) && !blockService.isBlockedEitherWay(userId, memberId)) {
                     server.getRoomOperations("user:" + memberId).sendEvent("typing", payload);
                 }
             }

@@ -13,5 +13,15 @@ public record ConversationResponse(
     Long lastMessageSenderId,   // ID người gửi tin nhắn cuối cùng
     LocalDateTime lastMessageAt,// Thời gian của tin nhắn cuối cùng
     Integer unreadCount,        // Số tin nhắn chưa đọc của người dùng hiện tại
-    Long createdBy              // ID người tạo nhóm / Quản trị viên chính
-) {}
+    Long createdBy,             // ID người tạo nhóm / Quản trị viên chính
+    Long otherUserId,           // Chat 1-1: id của đối phương (nhóm: null)
+    BlockStatus blockStatus     // Chat 1-1: trạng thái chặn -> frontend khoá ô nhập (nhóm: NONE)
+) {
+    // Cho cuộc trò chuyện nhóm: không có đối phương, không có trạng thái chặn
+    public ConversationResponse(Long id, ConversationType type, String title, String avatarUrl,
+            String lastMessage, Long lastMessageSenderId, LocalDateTime lastMessageAt,
+            Integer unreadCount, Long createdBy) {
+        this(id, type, title, avatarUrl, lastMessage, lastMessageSenderId, lastMessageAt,
+                unreadCount, createdBy, null, BlockStatus.NONE);
+    }
+}

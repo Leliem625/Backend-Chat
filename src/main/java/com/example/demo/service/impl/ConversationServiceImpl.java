@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.demo.dto.BlockStatus;
 import com.example.demo.dto.ConversationResponse;
 import com.example.demo.dto.CreateGroupRequest;
 import com.example.demo.entity.Conversation;
@@ -21,6 +22,7 @@ import com.example.demo.entity.User;
 import com.example.demo.repository.ConversationParticipantRepository;
 import com.example.demo.repository.ConversationRepository;
 import com.example.demo.repository.UserRepository;
+import com.example.demo.service.BlockService;
 import com.example.demo.service.ConversationService;
 
 @Service
@@ -29,14 +31,17 @@ public class ConversationServiceImpl implements ConversationService {
         private final ConversationRepository conversationRepository;
         private final ConversationParticipantRepository conversationParticipantRepository;
         private final UserRepository userRepository;
+        private final BlockService blockService;
         private static final Logger log = LoggerFactory.getLogger(FriendServiceImpl.class);
 
         public ConversationServiceImpl(ConversationRepository conversationRepository,
                         ConversationParticipantRepository conversationParticipantRepository,
-                        UserRepository userRepository) {
+                        UserRepository userRepository,
+                        BlockService blockService) {
                 this.conversationRepository = conversationRepository;
                 this.conversationParticipantRepository = conversationParticipantRepository;
                 this.userRepository = userRepository;
+                this.blockService = blockService;
         }
 
         @Override
@@ -101,6 +106,8 @@ public class ConversationServiceImpl implements ConversationService {
                                         .map(ConversationParticipant::getUnreadCount)
                                         .orElse(0);
 
+                        // Đã từng chat: vẫn mở được để xem lịch sử, frontend dựa vào blockStatus để
+                        // khoá ô nhập
                         return new ConversationResponse(
                                         conv.getId(),
                                         conv.getType(),
@@ -110,7 +117,14 @@ public class ConversationServiceImpl implements ConversationService {
                                         conv.getLastMessageSenderId(),
                                         conv.getLastMessageAt() != null ? conv.getLastMessageAt() : conv.getCreatedAt(),
                                         unreadCount,
-                                        conv.getCreatedBy());
+                                        conv.getCreatedBy(),
+                                        recipientId,
+                                        blockService.getStatus(currentUserId, recipientId));
+                }
+
+                // Chưa từng chat mà đã chặn nhau -> không cho tạo cuộc trò chuyện mới
+                if (blockService.isBlockedEitherWay(currentUserId, recipientId)) {
+                        throw new RuntimeException("Không thể nhắn tin cho người này!");
                 }
 
                 // 4. Nếu chưa có -> Tạo mới cuộc trò chuyện 1-1
@@ -133,7 +147,9 @@ public class ConversationServiceImpl implements ConversationService {
                                 null,
                                 savedConversation.getCreatedAt(),
                                 0,
-                                savedConversation.getCreatedBy());
+                                savedConversation.getCreatedBy(),
+                                recipientId,
+                                BlockStatus.NONE);
         }
 
         @Override
@@ -213,17 +229,30 @@ public class ConversationServiceImpl implements ConversationService {
                 List<Conversation> listConversations = conversationRepository.findAllByUserId(userId);
                 List<ConversationResponse> responses = new java.util.ArrayList<>();
 
+                // Lấy quan hệ chặn của tôi 1 lần (2 query) rồi tra trong bộ nhớ cho từng cuộc
+                // trò chuyện
+                Set<Long> blockedByMe = blockService.getBlockedByMeIds(userId);
+                Set<Long> blockingMe = blockService.getBlockingMeIds(userId);
+
                 for (Conversation conv : listConversations) {
                         String title = conv.getConversationName();
                         String avatarUrl = null;
+                        Long otherUserId = null;
+                        BlockStatus blockStatus = BlockStatus.NONE;
 
                         if (conv.getType() == ConversationType.DIRECT) {
                                 List<Long> memberIds = conversationParticipantRepository
                                                 .findUserIdsByConversationId(conv.getId());
-                                Long otherUserId = memberIds.stream()
+                                otherUserId = memberIds.stream()
                                                 .filter(id -> !id.equals(userId))
                                                 .findFirst()
                                                 .orElse(null);
+
+                                if (blockedByMe.contains(otherUserId)) {
+                                        blockStatus = BlockStatus.BLOCKED_BY_ME;
+                                } else if (blockingMe.contains(otherUserId)) {
+                                        blockStatus = BlockStatus.BLOCKED_ME;
+                                }
 
                                 if (otherUserId != null) {
                                         User otherUser = userRepository.findById(otherUserId).orElse(null);
@@ -248,7 +277,9 @@ public class ConversationServiceImpl implements ConversationService {
                                         conv.getLastMessageSenderId(),
                                         conv.getLastMessageAt() != null ? conv.getLastMessageAt() : conv.getCreatedAt(),
                                         unreadCount,
-                                        conv.getCreatedBy()));
+                                        conv.getCreatedBy(),
+                                        otherUserId,
+                                        blockStatus));
                 }
 
                 return responses;

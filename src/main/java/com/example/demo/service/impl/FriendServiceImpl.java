@@ -2,6 +2,7 @@ package com.example.demo.service.impl;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -24,6 +25,7 @@ import com.example.demo.repository.FriendRepository;
 import com.example.demo.repository.FriendRequestRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.search.UserDocument;
+import com.example.demo.service.BlockService;
 import com.example.demo.service.FriendService;
 import com.example.demo.service.NotificationService;
 
@@ -39,17 +41,20 @@ public class FriendServiceImpl implements FriendService {
     private static final Logger log = LoggerFactory.getLogger(FriendServiceImpl.class);
     private final ElasticsearchOperations elasticsearchOperations;
     private final NotificationService notificationService;
+    private final BlockService blockService;
 
     public FriendServiceImpl(FriendRepository friendRepository,
             FriendRequestRepository friendRequestRepository,
             UserRepository userRepository,
             ElasticsearchOperations elasticsearchOperations,
-            NotificationService notificationService) {
+            NotificationService notificationService,
+            BlockService blockService) {
         this.friendRepository = friendRepository;
         this.friendRequestRepository = friendRequestRepository;
         this.userRepository = userRepository;
         this.elasticsearchOperations = elasticsearchOperations;
         this.notificationService = notificationService;
+        this.blockService = blockService;
     }
 
     @Override
@@ -57,6 +62,11 @@ public class FriendServiceImpl implements FriendService {
     public void sendFriendRequest(Long fromUserId, Long toUserId, String message) {
         if (fromUserId.equals(toUserId)) {
             throw new RuntimeException("Không thể gửi lời mời kết bạn cho chính mình!");
+        }
+
+        // 0. Một trong hai đã chặn người kia -> không cho gửi (câu báo lỗi chung chung, không lộ ai chặn ai)
+        if (blockService.isBlockedEitherWay(fromUserId, toUserId)) {
+            throw new RuntimeException("Không thể gửi lời mời kết bạn cho người này!");
         }
 
         // 1. Kiểm tra nếu đã là bạn bè rồi thì không cho gửi nữa
@@ -169,6 +179,8 @@ public class FriendServiceImpl implements FriendService {
         }
         String q = keyword.trim();
         Set<Long> friendIds = new HashSet<>(friendRepository.findFriendIdsByUserId(userId));
+        // Người có quan hệ chặn với mình (2 chiều) -> loại khỏi kết quả, 2 bên không tìm thấy nhau
+        Set<Long> blockedIds = blockService.getBlockRelatedIds(userId);
         NativeQuery query = NativeQuery.builder()
                 .withQuery(root -> root.bool(b -> {
                     // 1. BẮT BUỘC khớp tên, chia tầng điểm để ai khớp ĐỦ các từ đứng trên cùng:
@@ -191,6 +203,10 @@ public class FriendServiceImpl implements FriendService {
                             .minimumShouldMatch("1")));
                     // 2. Không hiện chính mình
                     b.mustNot(n -> n.term(t -> t.field("id").value(userId)));
+                    if (!blockedIds.isEmpty()) {
+                        b.mustNot(n -> n.terms(t -> t.field("id")
+                                .terms(v -> v.value(blockedIds.stream().map(FieldValue::of).toList()))));
+                    }
                     // 3. Không bắt buộc: là bạn bè thì cộng thêm điểm -> xếp lên trên
                     if (!friendIds.isEmpty()) {
                         b.should(s -> s.terms(t -> t.field("id")
@@ -212,12 +228,15 @@ public class FriendServiceImpl implements FriendService {
             // Lời mời đang chờ (bảng friend_requests: còn dòng = đang chờ)
             Set<Long> sentTo = friendRequestRepository.findByFromUserId(userId).stream()
                     .map(FriendRequest::getToUserId).collect(Collectors.toSet());
-            Set<Long> receivedFrom = friendRequestRepository.findByToUserId(userId).stream()
-                    .map(FriendRequest::getFromUserId).collect(Collectors.toSet());
+            // Người đã gửi lời mời cho mình -> id lời mời (để bấm "Chấp nhận" ngay trong kết quả tìm kiếm)
+            Map<Long, Long> requestIdByFromUser = friendRequestRepository.findByToUserId(userId).stream()
+                    .collect(Collectors.toMap(FriendRequest::getFromUserId, FriendRequest::getId, (a, b) -> a));
+            Set<Long> receivedFrom = requestIdByFromUser.keySet();
 
             return docs.stream()
                     .map(d -> new FriendSearchResponse(d.getId(), d.getUsername(), d.getAvatarUrl(),
-                            relationOf(d.getId(), friendIds, sentTo, receivedFrom)))
+                            relationOf(d.getId(), friendIds, sentTo, receivedFrom),
+                            requestIdByFromUser.get(d.getId())))
                     .toList();
         } catch (Exception e) {
             // ES lỗi: ghi log, trả rỗng thay vì lỗi 500

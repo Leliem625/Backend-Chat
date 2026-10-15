@@ -23,5 +23,5 @@ public interface FriendService {
 
     List<FriendSearchResponse> searchFriends(Long userId, String keyword);
 
-    void blockFriend(Long userId, Long friendId);
+    // void blockFriend(Long userId, Long friendId);
 }
