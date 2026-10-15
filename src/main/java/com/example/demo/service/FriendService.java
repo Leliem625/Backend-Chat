@@ -2,6 +2,7 @@ package com.example.demo.service;
 
 import java.util.List;
 
+import com.example.demo.dto.FriendSearchResponse;
 import com.example.demo.dto.UserResponse;
 import com.example.demo.entity.FriendRequest;
 
@@ -19,4 +20,6 @@ public interface FriendService {
     List<FriendRequest> getPendingRequests(Long currentUserId);
 
     boolean isFriend(Long userAId, Long userBId);
+
+    List<FriendSearchResponse> searchFriends(Long userId, String keyword);
 }

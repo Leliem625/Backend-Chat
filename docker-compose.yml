@@ -1,0 +1,25 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.5
+    container_name: chat-elasticsearch
+    environment:
+      - discovery.type=single-node # chạy 1 node, không tìm cluster
+      - xpack.security.enabled=false # tắt mật khẩu/HTTPS, CHỈ dùng khi dev
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m # giới hạn RAM cho máy cá nhân
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data # giữ dữ liệu khi tắt container
+
+  kibana: # giao diện web để xem / thử query (không bắt buộc)
+    image: docker.elastic.co/kibana/kibana:9.4.5
+    container_name: chat-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+volumes:
+  es-data:

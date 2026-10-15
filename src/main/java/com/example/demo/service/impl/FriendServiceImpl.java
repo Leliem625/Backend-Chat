@@ -1,12 +1,20 @@
 package com.example.demo.service.impl;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.demo.dto.FriendRelation;
+import com.example.demo.dto.FriendSearchResponse;
 import com.example.demo.dto.UserResponse;
 import com.example.demo.entity.Friend;
 import com.example.demo.entity.FriendRequest;
@@ -14,7 +22,11 @@ import com.example.demo.entity.User;
 import com.example.demo.repository.FriendRepository;
 import com.example.demo.repository.FriendRequestRepository;
 import com.example.demo.repository.UserRepository;
+import com.example.demo.search.UserDocument;
 import com.example.demo.service.FriendService;
+
+import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
 
 @Service
 public class FriendServiceImpl implements FriendService {
@@ -23,13 +35,16 @@ public class FriendServiceImpl implements FriendService {
     private final FriendRequestRepository friendRequestRepository;
     private final UserRepository userRepository;
     private static final Logger log = LoggerFactory.getLogger(FriendServiceImpl.class);
+    private final ElasticsearchOperations elasticsearchOperations;
 
-    public FriendServiceImpl(FriendRepository friendRepository, 
-                             FriendRequestRepository friendRequestRepository,
-                             UserRepository userRepository) {
+    public FriendServiceImpl(FriendRepository friendRepository,
+            FriendRequestRepository friendRequestRepository,
+            UserRepository userRepository,
+            ElasticsearchOperations elasticsearchOperations) {
         this.friendRepository = friendRepository;
         this.friendRequestRepository = friendRequestRepository;
         this.userRepository = userRepository;
+        this.elasticsearchOperations = elasticsearchOperations;
     }
 
     @Override
@@ -130,5 +145,79 @@ public class FriendServiceImpl implements FriendService {
         Long maxId = Math.max(userAId, userBId);
 
         return friendRepository.existsByUserAIdAndUserBId(minId, maxId);
+    }
+
+    @Override
+    public List<FriendSearchResponse> searchFriends(Long userId, String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return List.of();
+        }
+        String q = keyword.trim();
+        Set<Long> friendIds = new HashSet<>(friendRepository.findFriendIdsByUserId(userId));
+        NativeQuery query = NativeQuery.builder()
+                .withQuery(root -> root.bool(b -> {
+                    // 1. BẮT BUỘC khớp tên, chia tầng điểm để ai khớp ĐỦ các từ đứng trên cùng:
+                    // - đúng cả DẤU, đúng thứ tự (gõ "Lê Liêm" -> "Lê Liêm") x20
+                    // - đúng cả DẤU, đủ mọi từ ("Liêm Lê Liêm") x5
+                    // - đúng cụm, đúng thứ tự, bỏ qua dấu ("Lê Liểm", "Le Liem") x10
+                    // - đủ mọi từ, cho phép gõ dở ("Lê Bá Liêm" khi gõ "le li") x5
+                    // - đủ mọi từ, cho phép gõ sai ("le lime") x2
+                    // - chỉ khớp 1 phần ("Lê Phương Sơn" khi gõ "le liem") x0.3 -> xuống cuối
+                    b.must(m -> m.bool(name -> name
+                            .should(s -> s.matchPhrase(x -> x.field("username.exact").query(q).boost(20f)))
+                            .should(s -> s.match(x -> x.field("username.exact").query(q)
+                                    .operator(Operator.And).boost(5f)))
+                            .should(s -> s.matchPhrase(x -> x.field("username").query(q).boost(10f)))
+                            .should(s -> s.match(x -> x.field("username.prefix").query(q)
+                                    .operator(Operator.And).boost(5f)))
+                            .should(s -> s.match(x -> x.field("username").query(q)
+                                    .operator(Operator.And).fuzziness("AUTO").boost(2f)))
+                            .should(s -> s.match(x -> x.field("username.prefix").query(q).boost(0.3f)))
+                            .minimumShouldMatch("1")));
+                    // 2. Không hiện chính mình
+                    b.mustNot(n -> n.term(t -> t.field("id").value(userId)));
+                    // 3. Không bắt buộc: là bạn bè thì cộng thêm điểm -> xếp lên trên
+                    if (!friendIds.isEmpty()) {
+                        b.should(s -> s.terms(t -> t.field("id")
+                                .terms(v -> v.value(friendIds.stream().map(FieldValue::of).toList()))
+                                .boost(2f)));
+                    }
+                    return b;
+                })).withMaxResults(20).build();
+        // In câu query dạng JSON (giống hệt cái dán vào Kibana Dev Tools)
+        log.info("[ES] Query tìm \"{}\": {}", q, query.getQuery());
+        try {
+            List<SearchHit<UserDocument>> hits = elasticsearchOperations.search(query, UserDocument.class)
+                    .getSearchHits();
+            // In từng kết quả kèm điểm để xem vì sao người này đứng trên người kia
+            hits.forEach(h -> log.info("[ES]   {} | id={} | {}", h.getScore(), h.getContent().getId(),
+                    h.getContent().getUsername()));
+            List<UserDocument> docs = hits.stream().map(SearchHit::getContent).toList();
+
+            // Lời mời đang chờ (bảng friend_requests: còn dòng = đang chờ)
+            Set<Long> sentTo = friendRequestRepository.findByFromUserId(userId).stream()
+                    .map(FriendRequest::getToUserId).collect(Collectors.toSet());
+            Set<Long> receivedFrom = friendRequestRepository.findByToUserId(userId).stream()
+                    .map(FriendRequest::getFromUserId).collect(Collectors.toSet());
+
+            return docs.stream()
+                    .map(d -> new FriendSearchResponse(d.getId(), d.getUsername(), d.getAvatarUrl(),
+                            relationOf(d.getId(), friendIds, sentTo, receivedFrom)))
+                    .toList();
+        } catch (Exception e) {
+            // ES lỗi: ghi log, trả rỗng thay vì lỗi 500
+            log.warn("[ES] Tìm kiếm người dùng thất bại: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private FriendRelation relationOf(Long otherId, Set<Long> friendIds, Set<Long> sentTo, Set<Long> receivedFrom) {
+        if (friendIds.contains(otherId))
+            return FriendRelation.FRIEND;
+        if (sentTo.contains(otherId))
+            return FriendRelation.REQUEST_SENT;
+        if (receivedFrom.contains(otherId))
+            return FriendRelation.REQUEST_RECEIVED;
+        return FriendRelation.NONE;
     }
 }

@@ -1,0 +1,39 @@
+{
+  "analysis": {
+    "char_filter": {
+      "vi_d": {
+        "type": "mapping",
+        "mappings": ["đ => d", "Đ => D"]
+      }
+    },
+    "filter": {
+      "prefix_ngram": {
+        "type": "edge_ngram",
+        "min_gram": 1,
+        "max_gram": 20
+      }
+    },
+    "analyzer": {
+      "vi_folding": {
+        "type": "custom",
+        "char_filter": ["vi_d"],
+        "tokenizer": "standard",
+        "filter": ["lowercase", "asciifolding"]
+      },
+      "vi_prefix": {
+        "type": "custom",
+        "char_filter": ["vi_d"],
+        "tokenizer": "standard",
+        "filter": ["lowercase", "asciifolding", "prefix_ngram"]
+      },
+      "vi_exact": {
+        "type": "custom",
+        "tokenizer": "standard",
+        "filter": ["lowercase"]
+      }
+    }
+  },
+  "index": {
+    "max_ngram_diff": 20
+  }
+}

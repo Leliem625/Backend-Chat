@@ -9,9 +9,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.demo.dto.ApiResponse;
+import com.example.demo.dto.FriendSearchResponse;
 import com.example.demo.dto.UserResponse;
 import com.example.demo.entity.FriendRequest;
 import com.example.demo.service.FriendService;
@@ -61,7 +63,7 @@ public class FriendRequestController {
     }
 
     @PostMapping("/unfriend")
-    public ResponseEntity<?> unfriend(@RequestAttribute("userId") Long userId, 
+    public ResponseEntity<?> unfriend(@RequestAttribute("userId") Long userId,
             @RequestBody Map<String, Object> body) {
         Long friendId = ParseUtils.toLong(body.get("friendId"));
         if (friendId == null) {
@@ -81,5 +83,12 @@ public class FriendRequestController {
     public ResponseEntity<?> getPendingRequests(@RequestAttribute("userId") Long userId) {
         List<FriendRequest> requests = friendService.getPendingRequests(userId);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách lời mời đang chờ thành công!", requests));
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<ApiResponse<List<FriendSearchResponse>>> searchUsers(
+            @RequestAttribute("userId") Long userId,
+            @RequestParam(defaultValue = "") String q) {
+        return ResponseEntity.ok(ApiResponse.success("Tìm kiếm thành công!", friendService.searchFriends(userId, q)));
     }
 }
