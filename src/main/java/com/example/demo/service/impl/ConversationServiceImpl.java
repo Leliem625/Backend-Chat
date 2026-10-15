@@ -253,4 +253,9 @@ public class ConversationServiceImpl implements ConversationService {
 
                 return responses;
         }
+
+        @Override
+        public long countUnreadConversations(Long userId) {
+                return conversationParticipantRepository.countUnreadConversations(userId);
+        }
 }

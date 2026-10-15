@@ -92,4 +92,13 @@ public class ConversationController {
         List<ConversationResponse> listConversations = conversationService.getListConversation(userId);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách cuộc trò chuyện thành công!", listConversations));
     }
+
+    // GET /api/conversation/unread-count: số cuộc trò chuyện còn tin chưa đọc
+    @GetMapping("/unread-count")
+    public ResponseEntity<ApiResponse<Map<String, Long>>> countUnreadConversations(
+            @RequestAttribute("userId") Long userId) {
+        long count = conversationService.countUnreadConversations(userId);
+        return ResponseEntity.ok(ApiResponse.success("Lấy số cuộc trò chuyện chưa đọc thành công!",
+                Map.of("count", count)));
+    }
 }

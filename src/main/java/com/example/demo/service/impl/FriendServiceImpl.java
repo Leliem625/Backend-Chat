@@ -18,12 +18,14 @@ import com.example.demo.dto.FriendSearchResponse;
 import com.example.demo.dto.UserResponse;
 import com.example.demo.entity.Friend;
 import com.example.demo.entity.FriendRequest;
+import com.example.demo.entity.NotificationType;
 import com.example.demo.entity.User;
 import com.example.demo.repository.FriendRepository;
 import com.example.demo.repository.FriendRequestRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.search.UserDocument;
 import com.example.demo.service.FriendService;
+import com.example.demo.service.NotificationService;
 
 import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
@@ -36,18 +38,22 @@ public class FriendServiceImpl implements FriendService {
     private final UserRepository userRepository;
     private static final Logger log = LoggerFactory.getLogger(FriendServiceImpl.class);
     private final ElasticsearchOperations elasticsearchOperations;
+    private final NotificationService notificationService;
 
     public FriendServiceImpl(FriendRepository friendRepository,
             FriendRequestRepository friendRequestRepository,
             UserRepository userRepository,
-            ElasticsearchOperations elasticsearchOperations) {
+            ElasticsearchOperations elasticsearchOperations,
+            NotificationService notificationService) {
         this.friendRepository = friendRepository;
         this.friendRequestRepository = friendRequestRepository;
         this.userRepository = userRepository;
         this.elasticsearchOperations = elasticsearchOperations;
+        this.notificationService = notificationService;
     }
 
     @Override
+    @Transactional
     public void sendFriendRequest(Long fromUserId, Long toUserId, String message) {
         if (fromUserId.equals(toUserId)) {
             throw new RuntimeException("Không thể gửi lời mời kết bạn cho chính mình!");
@@ -64,7 +70,10 @@ public class FriendServiceImpl implements FriendService {
         }
 
         FriendRequest friendRequest = new FriendRequest(fromUserId, toUserId, message);
-        friendRequestRepository.save(friendRequest);
+        FriendRequest saved = friendRequestRepository.save(friendRequest);
+        // Báo cho người nhận: "X đã gửi lời mời kết bạn" (referenceId = id lời mời để
+        // bấm Chấp nhận / Từ chối)
+        notificationService.notify(toUserId, fromUserId, NotificationType.FRIEND_REQUEST, saved.getId());
         log.info(">>> ĐÃ GỬI LỜI MỜI KẾT BẠN: from {} to {}", fromUserId, toUserId);
     }
 
@@ -85,6 +94,10 @@ public class FriendServiceImpl implements FriendService {
 
         // Xóa lời mời kết bạn sau khi đã chấp nhận
         friendRequestRepository.delete(friendRequest);
+        // Lời mời đã xử lý xong -> xoá thông báo "X đã gửi lời mời" của mình
+        notificationService.deleteByReference(NotificationType.FRIEND_REQUEST, requestId);
+        // Báo cho người đã gửi lời mời: "Y đã chấp nhận lời mời kết bạn"
+        notificationService.notify(fromUserId, currentUserId, NotificationType.FRIEND_ACCEPTED, requestId);
         log.info(">>> ĐÃ CHẤP NHẬN KẾT BẠN: {} và {}", fromUserId, currentUserId);
     }
 
@@ -97,6 +110,8 @@ public class FriendServiceImpl implements FriendService {
             throw new RuntimeException("Lời mời không tồn tại hoặc bạn không có quyền với lời mời này!");
         }
         friendRequestRepository.delete(friendRequest);
+        // Không báo cho người gửi (giống Facebook); chỉ xoá thông báo lời mời đã mất
+        notificationService.deleteByReference(NotificationType.FRIEND_REQUEST, requestId);
         log.info(">>> ĐÃ TỪ CHỐI LỜI MỜI KẾT BẠN ID = {}", requestId);
     }
 

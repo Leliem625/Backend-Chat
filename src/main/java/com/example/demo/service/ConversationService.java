@@ -17,6 +17,9 @@ public interface ConversationService {
 
     List<ConversationResponse> getListConversation(Long userId);
 
+    // Số cuộc trò chuyện còn tin chưa đọc (badge 💬)
+    long countUnreadConversations(Long userId);
+
     // List<MessageResponse> getMessageConversation(Long conversationId, Long
     // userId);
 }

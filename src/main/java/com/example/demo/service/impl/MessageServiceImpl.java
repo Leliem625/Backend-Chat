@@ -18,8 +18,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.corundumstudio.socketio.SocketIOServer;
 import com.example.demo.dto.MessagePageResponse;
@@ -41,6 +39,7 @@ import com.example.demo.repository.MessageRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.FileStorageService;
 import com.example.demo.service.MessageService;
+import com.example.demo.util.TransactionUtils;
 
 @Service
 public class MessageServiceImpl implements MessageService {
@@ -309,7 +308,7 @@ public class MessageServiceImpl implements MessageService {
     @Override
     public void emitNewMessage(Long conversationId, MessageResponse message) {
         List<Long> memberIds = conversationParticipantRepository.findUserIdsByConversationId(conversationId);
-        runAfterCommit(() -> {
+        TransactionUtils.runAfterCommit(() -> {
             for (Long memberId : memberIds) {
                 socketServer.getRoomOperations("user:" + memberId).sendEvent("new_message", message);
             }
@@ -342,7 +341,7 @@ public class MessageServiceImpl implements MessageService {
         List<MessageAttachment> attachments = messageAttachmentRepository.findByMessageId(messageId);
         if (!attachments.isEmpty()) {
             messageAttachmentRepository.deleteAll(attachments);
-            runAfterCommit(() -> {
+            TransactionUtils.runAfterCommit(() -> {
                 for (MessageAttachment att : attachments) {
                     try {
                         fileStorageService.delete(att.getPublicId(), att.getResourceType());
@@ -366,26 +365,11 @@ public class MessageServiceImpl implements MessageService {
 
         // Báo cho mọi thành viên (kể cả các thiết bị khác của người thu hồi)
         List<Long> memberIds = conversationParticipantRepository.findUserIdsByConversationId(conversationId);
-        runAfterCommit(() -> {
+        TransactionUtils.runAfterCommit(() -> {
             for (Long memberId : memberIds) {
                 socketServer.getRoomOperations("user:" + memberId).sendEvent("message_recalled", response);
             }
         });
         return response;
-    }
-
-    // Đang trong transaction -> đợi lưu xong (commit) mới chạy, tránh bên nhận gọi API
-    // khi dữ liệu chưa có trong DB; không có transaction thì chạy luôn
-    private void runAfterCommit(Runnable action) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    action.run();
-                }
-            });
-        } else {
-            action.run();
-        }
     }
 }

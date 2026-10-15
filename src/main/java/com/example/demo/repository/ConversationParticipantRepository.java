@@ -34,4 +34,8 @@ public interface ConversationParticipantRepository extends JpaRepository<Convers
 
     // 6. Xóa thành viên khỏi nhóm (khi rời nhóm hoặc bị xóa)
     void deleteByConversationIdAndUserId(Long conversationId, Long userId);
+
+    // 7. Đếm số cuộc trò chuyện còn tin chưa đọc (badge 💬 kiểu Messenger)
+    @Query("SELECT COUNT(cp) FROM ConversationParticipant cp WHERE cp.userId = :userId AND cp.unreadCount > 0")
+    long countUnreadConversations(@Param("userId") Long userId);
 }
